@@ -39,7 +39,8 @@ jobs:
 
       - name: Read Unity version
         id: unity
-        run: echo "version=$(grep m_EditorVersion: ProjectSettings/ProjectVersion.txt | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(grep 'm_EditorVersion:' ProjectSettings/ProjectVersion.txt | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       - name: Cache Unity Library folder
         uses: actions/cache@v4
