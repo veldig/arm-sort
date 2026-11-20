@@ -31,7 +31,8 @@ acceleration and jerk is what keeps motion smooth.
 
 - `Assets/ArmSort/Scripts`: game code (`Game.cs` loop and UI, `RobotArm.cs` kinematics, `Sfx.cs`, `Shapes.cs`)
 - `Assets/ArmSort/Editor`: one-time project setup and the `Arm Sort > Build Web` menu
-- `docs/`: the web build served by GitHub Pages
+- `web/index.html`: the full-screen page the browser build loads in
+- `.github/workflows/web.yml`: builds the game in Unity on every push and publishes it to GitHub Pages
 
 Built with Unity 6 (Universal 2D). Open the folder in Unity Hub and press Play.
 

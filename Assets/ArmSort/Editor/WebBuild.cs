@@ -12,7 +12,12 @@ namespace ArmSort.EditorTools
         const string Output = "Builds/Web";
 
         [MenuItem("Arm Sort/Build Web")]
-        static void Build()
+        static void Build() => Run(false);
+
+        // Entry point for command-line builds: Unity -batchmode -executeMethod ArmSort.EditorTools.WebBuild.BuildCI
+        public static void BuildCI() => Run(true);
+
+        static void Run(bool ci)
         {
             PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
             PlayerSettings.WebGL.decompressionFallback = true;
@@ -32,11 +37,13 @@ namespace ArmSort.EditorTools
             if (report.summary.result == BuildResult.Succeeded)
             {
                 Debug.Log($"Arm Sort web build done: {Output} ({report.summary.totalSize / 1024 / 1024} MB)");
-                EditorUtility.RevealInFinder(Output);
+                if (ci) EditorApplication.Exit(0);
+                else EditorUtility.RevealInFinder(Output);
             }
             else
             {
                 Debug.LogError($"Arm Sort web build failed: {report.summary.result}");
+                if (ci) EditorApplication.Exit(1);
             }
         }
     }

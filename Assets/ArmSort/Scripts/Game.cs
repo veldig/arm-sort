@@ -446,8 +446,8 @@ namespace ArmSort
 
         void FitCamera()
         {
-            // Keep the 7-unit-wide play area visible on any screen shape.
-            cam.orthographicSize = Mathf.Max(5.2f, 3.6f / Mathf.Max(cam.aspect, 0.01f));
+            // Keep the play area, chute included (about 8 units wide), visible on any screen shape.
+            cam.orthographicSize = Mathf.Max(5.2f, 4.1f / Mathf.Max(cam.aspect, 0.01f));
         }
 
         static bool PointerHeld(out Vector2 screen)
@@ -541,7 +541,7 @@ namespace ArmSort
                 case State.Playing:
                     DrawHud(u, top, sw);
                     if (level == 0 && sorted == 0 && misses == 0)
-                        GUI.Label(new Rect(sw * 0.1f, top + u * 11f, sw * 0.8f, u * 6f),
+                        GUI.Label(new Rect(sw * 0.1f, top + u * 14f, sw * 0.8f, u * 6f),
                                   "Drag to move the arm. Touch a part to grab it, let go over the bin of its color.", small);
                     break;
 
@@ -579,7 +579,8 @@ namespace ArmSort
         void DrawHud(float u, float top, float sw)
         {
             if (GUI.Button(new Rect(u * 2f, top + u * 2f, u * 14f, u * 5.5f), "Menu", smallButton)) ToMenu();
-            GUI.Label(new Rect(0, top + u * 2f, sw, u * 5.5f),
+            // Stats sit on their own row under the Menu button so they never overlap on narrow phones.
+            GUI.Label(new Rect(0, top + u * 8.5f, sw, u * 5f),
                       $"Level {level + 1}     Sorted {sorted}/{total}     Misses {misses}/{MaxMisses}", small);
         }
 

@@ -1,0 +1,96 @@
+name: Build and publish web game
+
+# Every push to main that touches the game rebuilds it in Unity on GitHub's
+# servers and publishes it to https://veldig.github.io/arm-sort/
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Assets/**"
+      - "Packages/**"
+      - "ProjectSettings/**"
+      - "web/**"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk space for the Unity image
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+
+      - uses: actions/checkout@v4
+
+      - name: Read Unity version
+        id: unity
+        run: echo "version=$(grep m_EditorVersion: ProjectSettings/ProjectVersion.txt | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Unity Library folder
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-WebGL-${{ steps.unity.outputs.version }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: Library-WebGL-${{ steps.unity.outputs.version }}-
+
+      # Unity Personal: sign in with the account (online activation), build, exit.
+      - name: Build with Unity
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          docker run --rm -v "$PWD:/project" -w /project \
+            -e UNITY_EMAIL -e UNITY_PASSWORD \
+            "unityci/editor:ubuntu-${{ steps.unity.outputs.version }}-webgl-3" \
+            bash -c 'unity-editor -batchmode -nographics -logFile - \
+              -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" \
+              -projectPath /project \
+              -executeMethod ArmSort.EditorTools.WebBuild.BuildCI'
+          sudo chown -R "$(id -u):$(id -g)" Builds Library
+
+      # GitHub Pages cannot serve Unity's pre-compressed files with the right
+      # headers, so ship plain files and let Pages compress them on the fly.
+      - name: Assemble site
+        run: |
+          set -e
+          sudo apt-get install -y brotli > /dev/null
+          out=Builds/Web/Build
+          mkdir -p site/Build
+          for f in Web.data Web.framework.js Web.wasm; do
+            if [ -f "$out/$f.br" ]; then brotli -d -c "$out/$f.br" > "site/Build/$f"
+            elif [ -f "$out/$f.gz" ]; then gunzip -c "$out/$f.gz" > "site/Build/$f"
+            else cp "$out/$f" "site/Build/$f"; fi
+          done
+          cp "$out/Web.loader.js" site/Build/
+          cp web/index.html site/index.html
+          touch site/.nojekyll
+          ls -la site site/Build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
