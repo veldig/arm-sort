@@ -45,8 +45,17 @@ jobs:
           set -e
           want=$(grep 'm_EditorVersion:' ProjectSettings/ProjectVersion.txt | awk '{print $2}')
           line=$(echo "$want" | cut -d. -f1,2)
-          tags=$(curl -s "https://hub.docker.com/v2/repositories/unityci/editor/tags?page_size=100&name=ubuntu-$line." \
-            | jq -r '.results[].name' | grep -E "^ubuntu-$line\.[0-9]+f[0-9]+-webgl-3$" | sort -V || true)
+          tags=""
+          url="https://hub.docker.com/v2/repositories/unityci/editor/tags?page_size=100&name=$line."
+          for page in 1 2 3 4 5; do
+            [ -z "$url" ] || [ "$url" = "null" ] && break
+            json=$(curl -s "$url")
+            tags="$tags"$'\n'"$(echo "$json" | jq -r '.results[].name')"
+            url=$(echo "$json" | jq -r '.next')
+          done
+          echo "Tags seen for $line: $(echo "$tags" | grep -c . || true)"
+          echo "$tags" | grep webgl | head -20 || true
+          tags=$(echo "$tags" | grep -E "^ubuntu-$line\.[0-9]+f[0-9]+-webgl-3$" | sort -uV || true)
           echo "Available for $line:"; echo "$tags"
           if echo "$tags" | grep -qx "ubuntu-$want-webgl-3"; then tag="ubuntu-$want-webgl-3"; else tag=$(echo "$tags" | tail -1); fi
           if [ -z "$tag" ]; then echo "::error::No GameCI WebGL image for Unity $line"; exit 1; fi
