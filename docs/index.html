@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Arm Sort</title>
+  <meta name="description" content="Drive a two-joint robot arm and sort every part before it falls off the belt. A free browser game by Martin Vizcaino.">
+  <meta property="og:title" content="Arm Sort">
+  <meta property="og:description" content="Drive a two-joint robot arm and sort every part before it falls off the belt.">
+  <meta name="theme-color" content="#171c29">
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #171c29;
+      overflow: hidden;
+      overscroll-behavior: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #e8ebf3;
+    }
+    #game {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100dvh;
+      display: block;
+      touch-action: none;
+      outline: none;
+    }
+    #loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: #171c29;
+      transition: opacity 0.4s ease;
+    }
+    #loading h1 {
+      margin: 0;
+      font-size: clamp(32px, 8vw, 56px);
+      letter-spacing: -0.02em;
+    }
+    #loading p {
+      margin: 0;
+      color: #9aa3b8;
+      font-size: 15px;
+    }
+    #bar {
+      width: min(280px, 70vw);
+      height: 8px;
+      border-radius: 4px;
+      background: #2c3344;
+      overflow: hidden;
+    }
+    #fill {
+      width: 0%;
+      height: 100%;
+      background: #fa8c33;
+      transition: width 0.15s linear;
+    }
+    #error {
+      max-width: 80vw;
+      text-align: center;
+      color: #ff8a80;
+      display: none;
+    }
+    #credit {
+      position: fixed;
+      right: 12px;
+      bottom: calc(10px + env(safe-area-inset-bottom));
+      font-size: 12px;
+      color: #6f7890;
+      text-decoration: none;
+    }
+    #credit:hover, #credit:focus-visible { color: #e8ebf3; }
+  </style>
+</head>
+<body>
+  <canvas id="game" tabindex="-1"></canvas>
+
+  <div id="loading" role="status" aria-live="polite">
+    <h1>Arm Sort</h1>
+    <div id="bar"><div id="fill"></div></div>
+    <p id="status">Loading the arm</p>
+    <p id="error"></p>
+  </div>
+
+  <a id="credit" href="https://github.com/veldig/arm-sort" target="_blank" rel="noopener">Made by Martin Vizcaino</a>
+
+  <script>
+    var canvas = document.getElementById("game");
+    var fill = document.getElementById("fill");
+    var statusEl = document.getElementById("status");
+    var errorEl = document.getElementById("error");
+    var loading = document.getElementById("loading");
+
+    var config = {
+      dataUrl: "Build/Web.data",
+      frameworkUrl: "Build/Web.framework.js",
+      codeUrl: "Build/Web.wasm",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "Martin Vizcaino",
+      productName: "Arm Sort",
+      productVersion: "1.0",
+      devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+      matchWebGLToCanvasSize: true,
+      showBanner: function (msg, type) {
+        if (type === "error") {
+          errorEl.textContent = msg;
+          errorEl.style.display = "block";
+        }
+      }
+    };
+
+    var script = document.createElement("script");
+    script.src = "Build/Web.loader.js";
+    script.onload = function () {
+      createUnityInstance(canvas, config, function (progress) {
+        fill.style.width = Math.round(progress * 100) + "%";
+      }).then(function () {
+        loading.style.opacity = "0";
+        setTimeout(function () { loading.remove(); }, 450);
+        canvas.focus();
+      }).catch(function (message) {
+        statusEl.textContent = "The game could not start in this browser.";
+        errorEl.textContent = message;
+        errorEl.style.display = "block";
+      });
+    };
+    script.onerror = function () {
+      statusEl.textContent = "Could not load the game files. Check your connection and refresh.";
+    };
+    document.body.appendChild(script);
+  </script>
+</body>
+</html>
