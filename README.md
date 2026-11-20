@@ -23,6 +23,11 @@ acceleration and jerk is what keeps motion smooth.
 ## What's in it
 
 - Procedural levels: more parts, a faster belt and up to four colors as you go
+- From level 5, a block the arm's links cannot pass through. A two-link arm has two
+  inverse kinematics solutions for most targets (elbow one way or the other), and
+  `Flip elbow` switches between them, so the player routes the arm around the block.
+  Collision is a segment-vs-rectangle test (Liang-Barsky) on each link, every frame.
+  From level 11 the block moves.
 - Star ratings, saved progress and a level select
 - Sound effects generated in code, no audio files
 - All art drawn from code at runtime, no image assets

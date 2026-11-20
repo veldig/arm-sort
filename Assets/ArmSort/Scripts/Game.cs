@@ -36,6 +36,8 @@ namespace ArmSort
         const float StripeGap = 0.8f;
         const int StripeCount = 9;
         const int MaxMisses = 3;
+        const int FirstObstacleLevel = 4;   // level 5 for the player
+        const int MovingObstacleLevel = 10; // level 11
         const string UnlockedKey = "armsort.unlocked";
         const string OldLevelKey = "armsort.level";
         static string StarsKey(int i) => "armsort.stars." + i;
@@ -54,6 +56,16 @@ namespace ArmSort
             public SpriteRenderer inside;
             public int color;
             public Rect area;
+            public float flash;
+        }
+
+        class Obstacle
+        {
+            public Transform t;
+            public SpriteRenderer body;
+            public Rect rect;
+            public float baseY;
+            public bool moves;
             public float flash;
         }
 
@@ -78,6 +90,7 @@ namespace ArmSort
         readonly List<Transform> stripes = new List<Transform>();
         readonly List<Spark> sparks = new List<Spark>();
         readonly List<Floater> floaters = new List<Floater>();
+        readonly List<Obstacle> obstacles = new List<Obstacle>();
         readonly Vector3 camHome = new Vector3(0f, -0.4f, -10f);
 
         Camera cam;
@@ -86,7 +99,8 @@ namespace ArmSort
         Part held;
         State state;
         int level, unlocked, colorCount, toSpawn, total, sorted, misses, stars;
-        float beltSpeed, spawnEvery, spawnTimer, shake;
+        float beltSpeed, spawnEvery, spawnTimer, shake, blockSoundCooldown;
+        Rect flipRect;
         bool armWasDown, blockPress, wasPressed;
         Vector2 levelScroll;
 
@@ -131,6 +145,7 @@ namespace ArmSort
             stripes.Clear();
             sparks.Clear();
             floaters.Clear();
+            obstacles.Clear();
             held = null;
             world = new GameObject("World").transform;
 
@@ -180,6 +195,59 @@ namespace ArmSort
             armGo.transform.localPosition = new Vector2(0f, BaseY);
             arm = armGo.AddComponent<RobotArm>();
             arm.Build(ArmBody, ArmJoint);
+
+            if (level >= FirstObstacleLevel) AddObstacle();
+        }
+
+        // A block below the belt on one side. The arm can always reach every target
+        // with one of its two elbow poses, so the player has to pick the right one.
+        void AddObstacle()
+        {
+            float side = level % 2 == 0 ? -1f : 1f;
+            float w = 0.7f, h = 1.2f;
+            float cx = side * 1.5f, cy = -2.9f;
+            var o = new Obstacle { moves = level >= MovingObstacleLevel, baseY = cy };
+            o.t = new GameObject("Obstacle").transform;
+            o.t.SetParent(world, false);
+            o.t.localPosition = new Vector2(cx, cy);
+            Shapes.Make("Edge", Shapes.Square, ArmJoint, o.t, Vector2.zero, new Vector2(w + 0.1f, h + 0.1f), 2);
+            o.body = Shapes.Make("Block", Shapes.Square, ChuteColor, o.t, Vector2.zero, new Vector2(w, h), 3);
+            for (int i = 0; i < 3; i++)
+                Shapes.Make("Stripe", Shapes.Square, StripeColor, o.t, new Vector2(0f, -h / 3f + i * h / 3f), new Vector2(w, 0.08f), 4);
+            o.rect = new Rect(cx - w / 2f, cy - h / 2f, w, h);
+            obstacles.Add(o);
+            arm.Obstacles.Add(o.rect);
+            // Start with the elbow on the block's side, so about half the targets need a flip.
+            arm.ElbowSign = side > 0f ? 1 : -1;
+        }
+
+        void MoveObstacles()
+        {
+            for (int i = 0; i < obstacles.Count; i++)
+            {
+                var o = obstacles[i];
+                if (!o.moves) continue;
+                float y = o.baseY + Mathf.Sin(Time.time * 0.7f) * 0.6f;
+                o.t.localPosition = new Vector2(o.t.localPosition.x, y);
+                o.rect.y = y - o.rect.height / 2f;
+                arm.Obstacles[i] = o.rect;
+            }
+        }
+
+        void FlipElbow()
+        {
+            arm.FlipElbow();
+            audioSrc.PlayOneShot(sGrab, 0.35f);
+        }
+
+        static bool FlipKeyPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var k = UnityEngine.InputSystem.Keyboard.current;
+            return k != null && k.spaceKey.wasPressedThisFrame;
+#else
+            return Input.GetKeyDown(KeyCode.Space);
+#endif
         }
 
         void Begin(int index)
@@ -205,7 +273,9 @@ namespace ArmSort
             FitCamera();
 
             bool pressed = PointerHeld(out Vector2 screen);
-            if (pressed && !wasPressed && screen.y > Screen.height * 0.88f) blockPress = true; // top bar is for buttons
+            if (pressed && !wasPressed &&
+                (screen.y > Screen.height * 0.88f || flipRect.Contains(new Vector2(screen.x, Screen.height - screen.y))))
+                blockPress = true; // presses that start on a button are not arm moves
             if (!pressed) blockPress = false;
             wasPressed = pressed;
             bool armDown = pressed && !blockPress;
@@ -232,6 +302,8 @@ namespace ArmSort
         void PlayUpdate(float dt, bool armDown, Vector2 screen)
         {
             MoveStripes(dt);
+            MoveObstacles();
+            if (obstacles.Count > 0 && FlipKeyPressed()) FlipElbow();
 
             if (armDown)
             {
@@ -405,6 +477,22 @@ namespace ArmSort
 
         void UpdateFx(float dt)
         {
+            blockSoundCooldown -= dt;
+            if (state == State.Playing && arm.Blocked)
+            {
+                foreach (var o in obstacles) o.flash = 1f;
+                if (blockSoundCooldown <= 0f)
+                {
+                    audioSrc.PlayOneShot(sBad, 0.25f);
+                    blockSoundCooldown = 0.5f;
+                }
+            }
+            foreach (var o in obstacles)
+            {
+                o.body.color = Color.Lerp(ChuteColor, WrongFlash, o.flash);
+                o.flash = Mathf.MoveTowards(o.flash, 0f, dt * 4f);
+            }
+
             foreach (var b in bins)
             {
                 float f = Mathf.Abs(b.flash);
@@ -543,6 +631,16 @@ namespace ArmSort
                     if (level == 0 && sorted == 0 && misses == 0)
                         GUI.Label(new Rect(sw * 0.1f, top + u * 14f, sw * 0.8f, u * 6f),
                                   "Drag to move the arm. Touch a part to grab it, let go over the bin of its color.", small);
+                    if (level == FirstObstacleLevel && sorted < 2)
+                        GUI.Label(new Rect(sw * 0.1f, top + u * 14f, sw * 0.8f, u * 6f),
+                                  "The arm can't pass through the block. Tap Flip elbow to bend it the other way.", small);
+                    if (obstacles.Count > 0)
+                    {
+                        float fw = u * 22f, fh = u * 7f;
+                        flipRect = new Rect(u * 2f, Screen.safeArea.yMin > 0 ? h - Screen.safeArea.yMin - fh - u * 2f : h - fh - u * 3f, fw, fh);
+                        if (GUI.Button(flipRect, "Flip elbow", button)) FlipElbow();
+                    }
+                    else flipRect = Rect.zero;
                     break;
 
                 case State.Won:
