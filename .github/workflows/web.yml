@@ -1,14 +1,12 @@
-name: Build and publish web game
+name: Publish web game
 
-# Every push to main that touches the game rebuilds it in Unity on GitHub's
-# servers and publishes it to https://veldig.github.io/arm-sort/
+# Unity Personal cannot build in the cloud (no headless license), so the game is
+# built on the Mac with Arm Sort > Build Web, the compressed files are committed
+# to web/Build, and this workflow publishes them to https://veldig.github.io/arm-sort/
 on:
   push:
     branches: [main]
     paths:
-      - "Assets/**"
-      - "Packages/**"
-      - "ProjectSettings/**"
       - "web/**"
       - ".github/workflows/web.yml"
   workflow_dispatch:
@@ -26,69 +24,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Free disk space for the Unity image
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: false
-
       - uses: actions/checkout@v4
-
-      # Use the project's exact Unity version if GameCI has an image for it,
-      # otherwise the newest image from the same minor line (e.g. 6000.6.x).
-      - name: Pick Unity image
-        id: unity
-        run: |
-          set -e
-          want=$(grep 'm_EditorVersion:' ProjectSettings/ProjectVersion.txt | awk '{print $2}')
-          line=$(echo "$want" | cut -d. -f1,2)
-          tags=""
-          url="https://hub.docker.com/v2/repositories/unityci/editor/tags?page_size=100&name=$line."
-          for page in 1 2 3 4 5; do
-            [ -z "$url" ] || [ "$url" = "null" ] && break
-            json=$(curl -s "$url")
-            tags="$tags"$'\n'"$(echo "$json" | jq -r '.results[].name')"
-            url=$(echo "$json" | jq -r '.next')
-          done
-          echo "Tags seen for $line: $(echo "$tags" | grep -c . || true)"
-          echo "$tags" | grep webgl | head -20 || true
-          tags=$(echo "$tags" | grep -E "^ubuntu-$line\.[0-9]+f[0-9]+-webgl-4$" | sort -uV || true)
-          echo "Available for $line:"; echo "$tags"
-          if echo "$tags" | grep -qx "ubuntu-$want-webgl-4"; then tag="ubuntu-$want-webgl-4"; else tag=$(echo "$tags" | tail -1); fi
-          if [ -z "$tag" ]; then echo "::error::No GameCI WebGL image for Unity $line"; exit 1; fi
-          echo "Using unityci/editor:$tag"
-          echo "image=unityci/editor:$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$want" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Unity Library folder
-        uses: actions/cache@v4
-        with:
-          path: Library
-          key: Library-WebGL-${{ steps.unity.outputs.version }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
-          restore-keys: Library-WebGL-${{ steps.unity.outputs.version }}-
-
-      # Unity Personal: sign in with the account (online activation), build, exit.
-      - name: Build with Unity
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-        run: |
-          docker run --rm -v "$PWD:/project" -w /project \
-            -e UNITY_EMAIL -e UNITY_PASSWORD -e UNITY_LICENSE \
-            "${{ steps.unity.outputs.image }}" \
-            bash -c 'if [ -n "$UNITY_LICENSE" ]; then
-                for d in /root/.local/share/unity3d/Unity /root/.config/unity3d/Unity; do
-                  mkdir -p "$d"; printf "%s" "$UNITY_LICENSE" > "$d/Unity_lic.ulf"; done
-              fi
-              unity-editor -batchmode -nographics -logFile - \
-              -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" \
-              -projectPath /project \
-              -executeMethod ArmSort.EditorTools.WebBuild.BuildCI'
-          sudo chown -R "$(id -u):$(id -g)" Builds Library
 
       # GitHub Pages cannot serve Unity's pre-compressed files with the right
       # headers, so ship plain files and let Pages compress them on the fly.
@@ -96,17 +32,17 @@ jobs:
         run: |
           set -e
           sudo apt-get install -y brotli > /dev/null
-          out=Builds/Web/Build
+          src=web/Build
           mkdir -p site/Build
           for f in Web.data Web.framework.js Web.wasm; do
-            if [ -f "$out/$f.br" ]; then brotli -d -c "$out/$f.br" > "site/Build/$f"
-            elif [ -f "$out/$f.gz" ]; then gunzip -c "$out/$f.gz" > "site/Build/$f"
-            else cp "$out/$f" "site/Build/$f"; fi
+            if [ -f "$src/$f.br" ]; then brotli -d -c "$src/$f.br" > "site/Build/$f"
+            elif [ -f "$src/$f.gz" ]; then gunzip -c "$src/$f.gz" > "site/Build/$f"
+            else cp "$src/$f" "site/Build/$f"; fi
           done
-          cp "$out/Web.loader.js" site/Build/
+          cp "$src/Web.loader.js" site/Build/
           cp web/index.html site/index.html
           touch site/.nojekyll
-          ls -la site site/Build
+          ls -la site/Build
 
       - uses: actions/upload-pages-artifact@v3
         with:
