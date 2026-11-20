@@ -55,7 +55,7 @@ jobs:
           done
           echo "Tags seen for $line: $(echo "$tags" | grep -c . || true)"
           echo "$tags" | grep webgl | head -20 || true
-          tags=$(echo "$tags" | grep -E "^ubuntu-$line\.[0-9]+f[0-9]+-webgl-3$" | sort -uV || true)
+          tags=$(echo "$tags" | grep -E "^ubuntu-$line\.[0-9]+f[0-9]+-webgl-4$" | sort -uV || true)
           echo "Available for $line:"; echo "$tags"
           if echo "$tags" | grep -qx "ubuntu-$want-webgl-4"; then tag="ubuntu-$want-webgl-4"; else tag=$(echo "$tags" | tail -1); fi
           if [ -z "$tag" ]; then echo "::error::No GameCI WebGL image for Unity $line"; exit 1; fi
