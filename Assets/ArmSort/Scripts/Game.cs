@@ -133,6 +133,20 @@ namespace ArmSort
 
             unlocked = PlayerPrefs.GetInt(UnlockedKey, PlayerPrefs.GetInt(OldLevelKey, 0));
             level = unlocked;
+
+            // Testing link: ...?level=5 opens that level for this visit only (nothing is saved).
+            var url = Application.absoluteURL;
+            int at = string.IsNullOrEmpty(url) ? -1 : url.IndexOf("level=", System.StringComparison.Ordinal);
+            if (at >= 0)
+            {
+                int end = at + 6;
+                while (end < url.Length && char.IsDigit(url[end])) end++;
+                if (int.TryParse(url.Substring(at + 6, end - at - 6), out int n) && n >= 1)
+                {
+                    level = n - 1;
+                    unlocked = Mathf.Max(unlocked, level);
+                }
+            }
             BuildLevel();
             state = State.Menu;
         }
