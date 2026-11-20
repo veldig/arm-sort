@@ -179,11 +179,11 @@ namespace ArmSort
 
         void BuildBackground()
         {
-            var grid = new Color(1f, 1f, 1f, 0.035f);
+            var grid = new Color(1f, 1f, 1f, 0.022f);
             for (int x = -10; x <= 10; x++)
-                Shapes.Make("GridV", Shapes.Square, grid, world, new Vector2(x, 0f), new Vector2(0.03f, 40f), -10);
+                Shapes.Make("GridV", Shapes.Square, grid, world, new Vector2(x, 0f), new Vector2(0.02f, 40f), -10);
             for (int y = -12; y <= 10; y++)
-                Shapes.Make("GridH", Shapes.Square, grid, world, new Vector2(0f, y), new Vector2(40f, 0.03f), -10);
+                Shapes.Make("GridH", Shapes.Square, grid, world, new Vector2(0f, y), new Vector2(40f, 0.02f), -10);
         }
 
         void BuildLevel()
@@ -642,6 +642,27 @@ namespace ArmSort
 
         // ---------- UI ----------
 
+        // Rounded button background; GUIStyle.border makes Unity 9-slice it so corners stay round.
+        static Texture2D RoundTex(Color c)
+        {
+            const int n = 32, r = 10;
+            var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+            for (int y = 0; y < n; y++)
+            {
+                for (int x = 0; x < n; x++)
+                {
+                    float cx = Mathf.Clamp(x + 0.5f, r, n - r);
+                    float cy = Mathf.Clamp(y + 0.5f, r, n - r);
+                    float dx = x + 0.5f - cx, dy = y + 0.5f - cy;
+                    float a = Mathf.Clamp01(r - Mathf.Sqrt(dx * dx + dy * dy) + 0.5f);
+                    t.SetPixel(x, y, new Color(c.r, c.g, c.b, c.a * a));
+                }
+            }
+            t.wrapMode = TextureWrapMode.Clamp;
+            t.Apply();
+            return t;
+        }
+
         static Texture2D Tex(Color c)
         {
             var t = new Texture2D(1, 1);
@@ -654,9 +675,9 @@ namespace ArmSort
         {
             if (button != null) return;
             white = Tex(Color.white);
-            btnTex = Tex(ArmJoint);
-            btnHover = Tex(new Color(1f, 0.66f, 0.34f));
-            btnGray = Tex(new Color(0.22f, 0.25f, 0.33f));
+            btnTex = RoundTex(ArmJoint);
+            btnHover = RoundTex(new Color(1f, 0.66f, 0.34f));
+            btnGray = RoundTex(new Color(0.22f, 0.25f, 0.33f));
 
             big = new GUIStyle { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
             big.normal.textColor = Color.white;
@@ -668,6 +689,7 @@ namespace ArmSort
             button.hover.background = btnHover;
             button.active.background = btnHover;
             button.normal.textColor = button.hover.textColor = button.active.textColor = Color.white;
+            button.border = new RectOffset(10, 10, 10, 10);
 
             smallButton = new GUIStyle(button);
             smallButton.normal.background = btnGray;
@@ -688,6 +710,15 @@ namespace ArmSort
             float bw = Mathf.Min(sw * 0.7f, u * 42f);
             float bh = u * 8f;
             float cx = sw / 2f;
+
+            // Dim the scene behind menus and result screens so the text and buttons stand out.
+            if (state != State.Playing)
+            {
+                var prevColor = GUI.color;
+                GUI.color = new Color(0.04f, 0.05f, 0.08f, 0.62f);
+                GUI.DrawTexture(new Rect(0, 0, sw, h), white);
+                GUI.color = prevColor;
+            }
 
             switch (state)
             {
