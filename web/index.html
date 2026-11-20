@@ -102,10 +102,12 @@
     var errorEl = document.getElementById("error");
     var loading = document.getElementById("loading");
 
+    // Each deploy stamps its own version so browsers never mix files from two builds.
+    var v = "?v=__BUILD_VERSION__";
     var config = {
-      dataUrl: "Build/Web.data",
-      frameworkUrl: "Build/Web.framework.js",
-      codeUrl: "Build/Web.wasm",
+      dataUrl: "Build/Web.data" + v,
+      frameworkUrl: "Build/Web.framework.js" + v,
+      codeUrl: "Build/Web.wasm" + v,
       streamingAssetsUrl: "StreamingAssets",
       companyName: "Martin Vizcaino",
       productName: "Arm Sort",
@@ -121,7 +123,7 @@
     };
 
     var script = document.createElement("script");
-    script.src = "Build/Web.loader.js";
+    script.src = "Build/Web.loader.js" + v;
     script.onload = function () {
       createUnityInstance(canvas, config, function (progress) {
         fill.style.width = Math.round(progress * 100) + "%";

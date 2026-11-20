@@ -44,7 +44,7 @@ jobs:
             else cp "$src/$f" "site/Build/$f"; fi
           done
           cp "$src/Web.loader.js" site/Build/
-          cp web/index.html site/index.html
+          sed "s/__BUILD_VERSION__/${GITHUB_SHA::8}/g" web/index.html > site/index.html
           touch site/.nojekyll
           ls -la site/Build
 
