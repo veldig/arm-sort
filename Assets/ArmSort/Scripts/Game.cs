@@ -26,13 +26,15 @@ namespace ArmSort
         static readonly Color Gold = new Color(1f, 0.80f, 0.25f);
         static readonly Color Dim = new Color(1f, 1f, 1f, 0.18f);
 
-        const float BaseY = -4.6f;
-        const float BeltY = -1.0f;
-        const float BinY = 1.5f;
         const float BeltHalf = 3.2f;
         const float SpawnX = -BeltHalf - 0.3f;
-        const float PartSize = 0.62f;
-        const float GrabRadius = 0.55f;
+        const float ComboWindow = 2.5f; // seconds between correct drops to keep a combo
+
+        // Layout. Phones in portrait get a taller layout with a longer arm, so the game
+        // fills the screen instead of sitting in a band across the middle.
+        float BaseY, BeltY, BinY, PartSize, GrabRadius, BinW, BinH, L1, L2;
+        float ObstacleX, ObstacleY, ObstacleW, ObstacleH;
+        bool tall;
         const float StripeGap = 0.8f;
         const int StripeCount = 9;
         const int MaxMisses = 3;
@@ -46,6 +48,7 @@ namespace ArmSort
         {
             public Transform t;
             public SpriteRenderer sr;
+            public Transform shadow;
             public int color;
             public bool onBelt = true;
         }
@@ -91,20 +94,21 @@ namespace ArmSort
         readonly List<Spark> sparks = new List<Spark>();
         readonly List<Floater> floaters = new List<Floater>();
         readonly List<Obstacle> obstacles = new List<Obstacle>();
-        readonly Vector3 camHome = new Vector3(0f, -0.4f, -10f);
+        Vector3 camHome = new Vector3(0f, -0.4f, -10f);
 
         Camera cam;
         Transform world;
         RobotArm arm;
         Part held;
         State state;
-        int level, unlocked, colorCount, toSpawn, total, sorted, misses, stars;
+        int level, unlocked, colorCount, toSpawn, total, sorted, misses, stars, combo, bestCombo, score;
+        float lastGoodTime = -10f;
         float beltSpeed, spawnEvery, spawnTimer, shake, blockSoundCooldown;
         Rect flipRect;
         bool armWasDown, blockPress, wasPressed;
         Vector2 levelScroll;
 
-        AudioSource audioSrc;
+        AudioSource audioSrc, comboSrc;
         AudioClip sGrab, sGood, sBad, sWin;
 
         GUIStyle big, small, button, smallButton;
@@ -126,6 +130,7 @@ namespace ArmSort
             if (FindAnyObjectByType<AudioListener>() == null) cam.gameObject.AddComponent<AudioListener>();
 
             audioSrc = gameObject.AddComponent<AudioSource>();
+            comboSrc = gameObject.AddComponent<AudioSource>();
             sGrab = Sfx.Notes("grab", new[] { 660f }, 0.05f);
             sGood = Sfx.Notes("good", new[] { 660f, 990f }, 0.07f);
             sBad = Sfx.Notes("bad", new[] { 150f, 110f }, 0.10f, true, 0.25f);
@@ -151,8 +156,39 @@ namespace ArmSort
             state = State.Menu;
         }
 
+        void ChooseLayout()
+        {
+            tall = cam.aspect < 0.7f;
+            if (tall)
+            {
+                BaseY = -6.2f; BeltY = -1.6f; BinY = 2.6f;
+                PartSize = 0.74f; GrabRadius = 0.65f; BinW = 1.45f; BinH = 1.2f;
+                L1 = 4.8f; L2 = 4.7f;
+                ObstacleX = 1.6f; ObstacleY = -3.9f; ObstacleW = 0.8f; ObstacleH = 1.6f;
+                camHome = new Vector3(-0.15f, -1.4f, -10f);
+            }
+            else
+            {
+                BaseY = -4.6f; BeltY = -1.0f; BinY = 1.5f;
+                PartSize = 0.62f; GrabRadius = 0.55f; BinW = 1.3f; BinH = 1.0f;
+                L1 = 3.4f; L2 = 3.2f;
+                ObstacleX = 1.5f; ObstacleY = -2.9f; ObstacleW = 0.7f; ObstacleH = 1.2f;
+                camHome = new Vector3(0f, -0.4f, -10f);
+            }
+        }
+
+        void BuildBackground()
+        {
+            var grid = new Color(1f, 1f, 1f, 0.035f);
+            for (int x = -10; x <= 10; x++)
+                Shapes.Make("GridV", Shapes.Square, grid, world, new Vector2(x, 0f), new Vector2(0.03f, 40f), -10);
+            for (int y = -12; y <= 10; y++)
+                Shapes.Make("GridH", Shapes.Square, grid, world, new Vector2(0f, y), new Vector2(40f, 0.03f), -10);
+        }
+
         void BuildLevel()
         {
+            ChooseLayout();
             if (world != null) Destroy(world.gameObject);
             parts.Clear();
             bins.Clear();
@@ -162,6 +198,10 @@ namespace ArmSort
             obstacles.Clear();
             held = null;
             world = new GameObject("World").transform;
+            BuildBackground();
+            combo = 0;
+            bestCombo = 0;
+            score = 0;
 
             colorCount = Mathf.Clamp(2 + level / 5, 2, Palette.Length);
             total = Mathf.Min(6 + level * 2, 40);
@@ -172,8 +212,9 @@ namespace ArmSort
             spawnEvery = Mathf.Max(0.6f, 2.0f - level * 0.05f);
             spawnTimer = 0.5f;
 
-            Shapes.Make("Belt", Shapes.Square, BeltColor, world, new Vector2(0f, BeltY),
-                        new Vector2(BeltHalf * 2f + 0.6f, 0.9f), 0);
+            Shapes.MakeRound("BeltShadow", new Color(0f, 0f, 0f, 0.3f), world, new Vector2(0.08f, BeltY - 0.12f),
+                             new Vector2(BeltHalf * 2f + 0.8f, 1.05f), -1);
+            Shapes.MakeRound("Belt", BeltColor, world, new Vector2(0f, BeltY), new Vector2(BeltHalf * 2f + 0.8f, 1.0f), 0);
             for (int i = 0; i < StripeCount; i++)
             {
                 var s = Shapes.Make("Stripe", Shapes.Square, StripeColor, world,
@@ -182,12 +223,12 @@ namespace ArmSort
             }
 
             // Chute at the left end: parts come out from under it.
-            Shapes.Make("Chute", Shapes.Square, ChuteColor, world, new Vector2(SpawnX, BeltY + 0.15f), new Vector2(1.1f, 1.4f), 6);
-            Shapes.Make("ChuteMouth", Shapes.Square, Background, world, new Vector2(SpawnX + 0.25f, BeltY - 0.05f), new Vector2(0.6f, 0.75f), 4);
-            Shapes.Make("ChuteLip", Shapes.Square, ArmJoint, world, new Vector2(SpawnX, BeltY + 0.82f), new Vector2(1.1f, 0.12f), 6);
+            Shapes.MakeRound("Chute", ChuteColor, world, new Vector2(SpawnX, BeltY + 0.2f), new Vector2(1.2f, 1.6f), 6);
+            Shapes.MakeRound("ChuteLip", ArmJoint, world, new Vector2(SpawnX, BeltY + 0.98f), new Vector2(1.3f, 0.16f), 6);
 
             float span = 4.4f;
-            float w = colorCount >= 4 ? 1.05f : 1.3f;
+            float w = colorCount >= 4 ? Mathf.Min(BinW, 1.1f) : BinW;
+            float bh = BinH;
             for (int i = 0; i < colorCount; i++)
             {
                 float x = Mathf.Lerp(-span / 2f, span / 2f, i / (float)(colorCount - 1));
@@ -195,12 +236,13 @@ namespace ArmSort
                 b.t = new GameObject("Bin").transform;
                 b.t.SetParent(world, false);
                 b.t.localPosition = new Vector2(x, BinY);
-                Shapes.Make("Rim", Shapes.Square, Palette[i], b.t, Vector2.zero, new Vector2(w + 0.16f, 1.16f), 0);
-                b.inside = Shapes.Make("Inside", Shapes.Square, Background, b.t, Vector2.zero, new Vector2(w, 1.0f), 1);
+                Shapes.MakeRound("Shadow", new Color(0f, 0f, 0f, 0.3f), b.t, new Vector2(0.08f, -0.12f), new Vector2(w + 0.2f, bh + 0.2f), -1);
+                Shapes.MakeRound("Rim", Palette[i], b.t, Vector2.zero, new Vector2(w + 0.2f, bh + 0.2f), 0);
+                b.inside = Shapes.MakeRound("Inside", Background, b.t, new Vector2(0f, -0.04f), new Vector2(w - 0.04f, bh - 0.08f), 1);
                 var mark = Palette[i];
                 mark.a = 0.35f;
-                Shapes.Make("Mark", ShapeFor(i), mark, b.t, Vector2.zero, Vector2.one * 0.45f, 2);
-                b.area = new Rect(x - w / 2f - 0.15f, BinY - 0.65f, w + 0.3f, 1.3f);
+                Shapes.Make("Mark", ShapeFor(i), mark, b.t, Vector2.zero, Vector2.one * (bh * 0.42f), 2);
+                b.area = new Rect(x - w / 2f - 0.15f, BinY - bh / 2f - 0.15f, w + 0.3f, bh + 0.3f);
                 bins.Add(b);
             }
 
@@ -208,6 +250,8 @@ namespace ArmSort
             armGo.transform.SetParent(world, false);
             armGo.transform.localPosition = new Vector2(0f, BaseY);
             arm = armGo.AddComponent<RobotArm>();
+            arm.L1 = L1;
+            arm.L2 = L2;
             arm.Build(ArmBody, ArmJoint);
 
             if (level >= FirstObstacleLevel) AddObstacle();
@@ -218,14 +262,15 @@ namespace ArmSort
         void AddObstacle()
         {
             float side = level % 2 == 0 ? -1f : 1f;
-            float w = 0.7f, h = 1.2f;
-            float cx = side * 1.5f, cy = -2.9f;
+            float w = ObstacleW, h = ObstacleH;
+            float cx = side * ObstacleX, cy = ObstacleY;
             var o = new Obstacle { moves = level >= MovingObstacleLevel, baseY = cy };
             o.t = new GameObject("Obstacle").transform;
             o.t.SetParent(world, false);
             o.t.localPosition = new Vector2(cx, cy);
-            Shapes.Make("Edge", Shapes.Square, ArmJoint, o.t, Vector2.zero, new Vector2(w + 0.1f, h + 0.1f), 2);
-            o.body = Shapes.Make("Block", Shapes.Square, ChuteColor, o.t, Vector2.zero, new Vector2(w, h), 3);
+            Shapes.MakeRound("Shadow", new Color(0f, 0f, 0f, 0.3f), o.t, new Vector2(0.08f, -0.12f), new Vector2(w + 0.12f, h + 0.12f), 1);
+            Shapes.MakeRound("Edge", ArmJoint, o.t, Vector2.zero, new Vector2(w + 0.12f, h + 0.12f), 2);
+            o.body = Shapes.MakeRound("Block", ChuteColor, o.t, Vector2.zero, new Vector2(w, h), 3);
             for (int i = 0; i < 3; i++)
                 Shapes.Make("Stripe", Shapes.Square, StripeColor, o.t, new Vector2(0f, -h / 3f + i * h / 3f), new Vector2(w, 0.08f), 4);
             o.rect = new Rect(cx - w / 2f, cy - h / 2f, w, h);
@@ -241,7 +286,7 @@ namespace ArmSort
             {
                 var o = obstacles[i];
                 if (!o.moves) continue;
-                float y = o.baseY + Mathf.Sin(Time.time * 0.7f) * 0.6f;
+                float y = o.baseY + Mathf.Sin(Time.time * 0.7f) * (tall ? 0.8f : 0.6f);
                 o.t.localPosition = new Vector2(o.t.localPosition.x, y);
                 o.rect.y = y - o.rect.height / 2f;
                 arm.Obstacles[i] = o.rect;
@@ -279,11 +324,14 @@ namespace ArmSort
             state = State.Menu;
         }
 
-        static Sprite ShapeFor(int color) => color % 2 == 0 ? Shapes.Square : Shapes.Circle;
+        static Sprite ShapeFor(int color) => color % 2 == 0 ? Shapes.RoundSquare : Shapes.Circle;
 
         void Update()
         {
             float dt = Time.deltaTime;
+            // Screen turned or resized between portrait and wide: rebuild the layout,
+            // but never in the middle of a level.
+            if ((cam.aspect < 0.7f) != tall && (state == State.Menu || state == State.Levels)) BuildLevel();
             FitCamera();
 
             bool pressed = PointerHeld(out Vector2 screen);
@@ -381,7 +429,9 @@ namespace ArmSort
             int c = Random.Range(0, colorCount);
             var sr = Shapes.Make("Part", ShapeFor(c), Palette[c], world,
                                  new Vector2(SpawnX, BeltY), Vector2.one * PartSize, 5);
-            parts.Add(new Part { t = sr.transform, sr = sr, color = c });
+            var sh = Shapes.Make("Shadow", ShapeFor(c), new Color(0f, 0f, 0f, 0.35f), sr.transform,
+                                 new Vector2(0.1f, -0.14f), Vector2.one, 4);
+            parts.Add(new Part { t = sr.transform, sr = sr, color = c, shadow = sh.transform });
         }
 
         void TryGrab()
@@ -403,6 +453,8 @@ namespace ArmSort
             held.onBelt = false;
             held.sr.sortingOrder = 7;
             held.t.localScale = Vector3.one * (PartSize * 1.15f);
+            held.shadow.localPosition = new Vector3(0.3f, -0.45f, 0f); // lifted: shadow falls further away
+            held.shadow.GetComponent<SpriteRenderer>().sortingOrder = 6;
             audioSrc.PlayOneShot(sGrab, 0.6f);
         }
 
@@ -412,6 +464,8 @@ namespace ArmSort
             held = null;
             p.t.localScale = Vector3.one * PartSize;
             p.sr.sortingOrder = 5;
+            p.shadow.localPosition = new Vector3(0.1f, -0.14f, 0f);
+            p.shadow.GetComponent<SpriteRenderer>().sortingOrder = 4;
             Vector2 pos = p.t.position;
 
             foreach (var b in bins)
@@ -421,10 +475,16 @@ namespace ArmSort
                 if (b.color == p.color)
                 {
                     sorted++;
+                    combo = Time.time - lastGoodTime <= ComboWindow ? combo + 1 : 1;
+                    lastGoodTime = Time.time;
+                    bestCombo = Mathf.Max(bestCombo, combo);
+                    score += combo;
                     b.flash = 1f;
-                    Burst(center, Palette[p.color], 14);
-                    Float(center + Vector3.up * 0.8f, "+1", Palette[p.color]);
-                    audioSrc.PlayOneShot(sGood, 0.8f);
+                    Burst(center, Palette[p.color], 14 + combo * 3);
+                    Float(center + Vector3.up * 0.8f, combo > 1 ? $"+{combo}  combo x{combo}" : "+1", Palette[p.color]);
+                    comboSrc.pitch = 1f + 0.08f * Mathf.Min(combo - 1, 8);
+                    comboSrc.PlayOneShot(sGood, 0.8f);
+                    if (combo >= 3) shake = Mathf.Max(shake, 0.12f);
                 }
                 else
                 {
@@ -449,6 +509,7 @@ namespace ArmSort
         void Miss()
         {
             misses++;
+            combo = 0;
             shake = 0.3f;
             audioSrc.PlayOneShot(sBad, 0.7f);
         }
@@ -549,7 +610,9 @@ namespace ArmSort
         void FitCamera()
         {
             // Keep the play area, chute included (about 8 units wide), visible on any screen shape.
-            cam.orthographicSize = Mathf.Max(5.2f, 4.1f / Mathf.Max(cam.aspect, 0.01f));
+            cam.orthographicSize = tall
+                ? 4.05f / Mathf.Max(cam.aspect, 0.01f)
+                : Mathf.Max(5.2f, 4.1f / Mathf.Max(cam.aspect, 0.01f));
         }
 
         static bool PointerHeld(out Vector2 screen)
@@ -661,6 +724,7 @@ namespace ArmSort
                     DrawHud(u, top, sw);
                     GUI.Label(new Rect(0, h * 0.2f, sw, u * 10f), "Sorted!", big);
                     DrawStars(new Vector2(cx, h * 0.2f + u * 12f), stars, u * 4f);
+                    GUI.Label(new Rect(0, h * 0.2f + u * 17f, sw, u * 5f), $"Score {score}     Best combo x{bestCombo}", small);
                     if (GUI.Button(new Rect(cx - bw / 2f, h * 0.62f, bw, bh), "Next level", button)) Begin(level + 1);
                     if (GUI.Button(new Rect(cx - bw / 2f, h * 0.62f + bh * 1.3f, bw, bh), "Menu", smallButton)) ToMenu();
                     break;
@@ -682,7 +746,8 @@ namespace ArmSort
                 small.normal.textColor = c;
                 int prevSize = small.fontSize;
                 small.fontSize = Mathf.RoundToInt(u * 3.6f);
-                GUI.Label(new Rect(sp.x - u * 15f, h - sp.y - u * 3f, u * 30f, u * 6f), f.text, small);
+                float fx = Mathf.Clamp(sp.x, u * 15f, sw - u * 15f); // keep the text on screen
+                GUI.Label(new Rect(fx - u * 15f, h - sp.y - u * 3f, u * 30f, u * 6f), f.text, small);
                 small.fontSize = prevSize;
                 small.normal.textColor = prev;
             }
@@ -693,7 +758,14 @@ namespace ArmSort
             if (GUI.Button(new Rect(u * 2f, top + u * 2f, u * 14f, u * 5.5f), "Menu", smallButton)) ToMenu();
             // Stats sit on their own row under the Menu button so they never overlap on narrow phones.
             GUI.Label(new Rect(0, top + u * 8.5f, sw, u * 5f),
-                      $"Level {level + 1}     Sorted {sorted}/{total}     Misses {misses}/{MaxMisses}", small);
+                      $"Level {level + 1}     Sorted {sorted}/{total}     Score {score}     Misses {misses}/{MaxMisses}", small);
+            if (state == State.Playing && combo > 1 && Time.time - lastGoodTime <= ComboWindow)
+            {
+                var prev = big.fontSize;
+                big.fontSize = Mathf.RoundToInt(u * 5f);
+                GUI.Label(new Rect(sw - u * 22f, top + u * 2f, u * 20f, u * 6f), $"x{combo}", big);
+                big.fontSize = prev;
+            }
         }
 
         void DrawStars(Vector2 center, int count, float size)

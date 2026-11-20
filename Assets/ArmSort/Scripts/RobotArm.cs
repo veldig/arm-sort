@@ -30,8 +30,14 @@ namespace ArmSort
 
         public void Build(Color body, Color joint)
         {
-            Shapes.Make("Base", Shapes.Square, new Color(body.r * 0.75f, body.g * 0.75f, body.b * 0.75f, 1f), transform,
-                        new Vector2(0f, -0.45f), new Vector2(1.8f, 0.9f), 2);
+            // Base: a dark plinth, a lighter plate and four bolts.
+            var dark = new Color(body.r * 0.45f, body.g * 0.47f, body.b * 0.55f, 1f);
+            var plate = new Color(body.r * 0.7f, body.g * 0.72f, body.b * 0.78f, 1f);
+            Shapes.MakeRound("Plinth", dark, transform, new Vector2(0f, -0.55f), new Vector2(2.4f, 1.0f), 1);
+            Shapes.MakeRound("Plate", plate, transform, new Vector2(0f, -0.35f), new Vector2(1.7f, 0.75f), 2);
+            for (int i = 0; i < 4; i++)
+                Shapes.Make("Bolt", Shapes.Circle, dark, transform,
+                            new Vector2(i < 2 ? -0.65f : 0.65f, i % 2 == 0 ? -0.15f : -0.55f), Vector2.one * 0.14f, 3);
             link1 = MakeLink("Link1", L1, transform, body, joint, 0.42f);
             link2 = MakeLink("Link2", L2, link1, body, joint, 0.34f);
             link2.localPosition = new Vector3(L1, 0f, 0f);
@@ -51,7 +57,9 @@ namespace ArmSort
         {
             var t = new GameObject(name).transform;
             t.SetParent(parent, false);
-            Shapes.Make("Bar", Shapes.Square, body, t, new Vector2(len / 2f, 0f), new Vector2(len, width), 3);
+            Shapes.MakeRound("Bar", body, t, new Vector2(len / 2f, 0f), new Vector2(len + width, width), 3);
+            Shapes.MakeRound("Groove", new Color(0f, 0f, 0f, 0.12f), t, new Vector2(len / 2f, 0f),
+                             new Vector2(len * 0.7f, width * 0.22f), 4);
             Shapes.Make("Joint", Shapes.Circle, joint, t, Vector2.zero, Vector2.one * (width + 0.25f), 4);
             return t;
         }
@@ -60,7 +68,7 @@ namespace ArmSort
         {
             var t = new GameObject("Finger").transform;
             t.SetParent(gripper, false);
-            Shapes.Make("Bar", Shapes.Square, joint, t, new Vector2(0.24f, 0f), new Vector2(0.48f, 0.12f), 6);
+            Shapes.MakeRound("Bar", joint, t, new Vector2(0.24f, 0f), new Vector2(0.52f, 0.14f), 6);
             return t;
         }
 
