@@ -35,7 +35,11 @@ jobs:
           src=web/Build
           mkdir -p site/Build
           for f in Web.data Web.framework.js Web.wasm; do
-            if [ -f "$src/$f.br" ]; then brotli -d -c "$src/$f.br" > "site/Build/$f"
+            if [ -f "$src/$f.unityweb" ]; then
+              # Unity's "decompression fallback" files: gzip or brotli inside
+              if gzip -t "$src/$f.unityweb" 2>/dev/null; then gunzip -c "$src/$f.unityweb" > "site/Build/$f"
+              else brotli -d -c "$src/$f.unityweb" > "site/Build/$f"; fi
+            elif [ -f "$src/$f.br" ]; then brotli -d -c "$src/$f.br" > "site/Build/$f"
             elif [ -f "$src/$f.gz" ]; then gunzip -c "$src/$f.gz" > "site/Build/$f"
             else cp "$src/$f" "site/Build/$f"; fi
           done
